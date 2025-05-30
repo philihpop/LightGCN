@@ -44,8 +44,8 @@ config['multicore'] = args.multicore
 config['lr'] = args.lr
 config['decay'] = args.decay
 config['pretrain'] = args.pretrain
-config['A_split'] = False
-config['bigdata'] = False
+config['A_split'] = True
+config['bigdata'] = True
 
 GPU = torch.cuda.is_available()
 device = torch.device('cuda' if GPU else "cpu")

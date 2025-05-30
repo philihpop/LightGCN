@@ -29,28 +29,63 @@ def BPR_train_original(dataset, recommend_model, loss_class, epoch, neg_k=1, w=N
     bpr: utils.BPRLoss = loss_class
     
     with timer(name="Sample"):
-        S = utils.UniformSample_original(dataset)
-    users = torch.Tensor(S[:, 0]).long()
-    posItems = torch.Tensor(S[:, 1]).long()
-    negItems = torch.Tensor(S[:, 2]).long()
-
-    users = users.to(world.device)
-    posItems = posItems.to(world.device)
-    negItems = negItems.to(world.device)
-    users, posItems, negItems = utils.shuffle(users, posItems, negItems)
-    total_batch = len(users) // world.config['bpr_batch_size'] + 1
-    aver_loss = 0.
-    for (batch_i,
-         (batch_users,
-          batch_pos,
-          batch_neg)) in enumerate(utils.minibatch(users,
-                                                   posItems,
-                                                   negItems,
-                                                   batch_size=world.config['bpr_batch_size'])):
-        cri = bpr.stageOne(batch_users, batch_pos, batch_neg)
-        aver_loss += cri
-        if world.tensorboard:
-            w.add_scalar(f'BPRLoss/BPR', cri, epoch * int(len(users) / world.config['bpr_batch_size']) + batch_i)
+        S = utils.UniformSample_original(dataset, neg_num=neg_k)
+    if neg_k == 1:
+        # Original single negative approach
+        users = torch.Tensor(S[:, 0]).long()
+        posItems = torch.Tensor(S[:, 1]).long()
+        negItems = torch.Tensor(S[:, 2]).long()
+        
+        users = users.to(world.device)
+        posItems = posItems.to(world.device)
+        negItems = negItems.to(world.device)
+        users, posItems, negItems = utils.shuffle(users, posItems, negItems)
+        
+        total_batch = len(users) // world.config['bpr_batch_size'] + 1
+        aver_loss = 0.
+        
+        for (batch_i, (batch_users, batch_pos, batch_neg)) in enumerate(
+            utils.minibatch(users, posItems, negItems, batch_size=world.config['bpr_batch_size'])
+        ):
+            cri = bpr.stageOne(batch_users, batch_pos, batch_neg)
+            aver_loss += cri
+            if world.tensorboard:
+                w.add_scalar(f'BPRLoss/BPR', cri, epoch * int(len(users) / world.config['bpr_batch_size']) + batch_i)
+    
+    else:
+        # Multiple negatives approach
+        users = torch.Tensor(S[:, 0]).long()
+        posItems = torch.Tensor(S[:, 1]).long()
+        # Extract ALL negative columns (2 to neg_k+1)
+        negItems = torch.Tensor(S[:, 2:2+neg_k]).long()  # Shape: (n_samples, neg_k)
+        
+        users = users.to(world.device)
+        posItems = posItems.to(world.device)
+        negItems = negItems.to(world.device)
+        
+        # Shuffle while keeping user-pos-negs together
+        perm = torch.randperm(len(users))
+        users = users[perm]
+        posItems = posItems[perm]
+        negItems = negItems[perm]
+        
+        total_batch = len(users) // world.config['bpr_batch_size'] + 1
+        aver_loss = 0.
+        
+        for batch_i in range(total_batch):
+            start_idx = batch_i * world.config['bpr_batch_size']
+            end_idx = min((batch_i + 1) * world.config['bpr_batch_size'], len(users))
+            
+            batch_users = users[start_idx:end_idx]
+            batch_pos = posItems[start_idx:end_idx]
+            batch_negs = negItems[start_idx:end_idx]  # Shape: (batch_size, neg_k)
+            
+            # Compute loss using multiple negatives
+            cri = bpr.stageOne_multiNeg(batch_users, batch_pos, batch_negs)
+            aver_loss += cri
+            
+            if world.tensorboard:
+                w.add_scalar(f'BPRLoss/BPR_MultiNeg', cri, epoch * total_batch + batch_i)
     aver_loss = aver_loss / total_batch
     time_info = timer.dict()
     timer.zero()

@@ -48,15 +48,40 @@ class BPRLoss:
         self.opt.step()
 
         return loss.cpu().item()
+    def stageOne_multiNeg(self, users, pos, negs):
+        """
+        Multi-negative BPR loss
+        Args:
+            users: (batch_size,)
+            pos: (batch_size,)
+            negs: (batch_size, neg_k) - multiple negatives per positive
+        """
+        batch_size, neg_k = negs.shape
+        
+        # Expand users and pos to match negatives
+        users_expanded = users.unsqueeze(1).expand(-1, neg_k).contiguous().view(-1)  # (batch_size * neg_k,)
+        pos_expanded = pos.unsqueeze(1).expand(-1, neg_k).contiguous().view(-1)      # (batch_size * neg_k,)
+        negs_flat = negs.view(-1)  # (batch_size * neg_k,)
+        
+        # Compute BPR loss for all user-pos-neg triplets
+        loss, reg_loss = self.model.bpr_loss(users_expanded, pos_expanded, negs_flat)
+        
+        
+        total_loss = loss + reg_loss * self.weight_decay
 
+        self.opt.zero_grad()
+        total_loss.backward()
+        self.opt.step()
 
-def UniformSample_original(dataset, neg_ratio = 1):
+        return total_loss.cpu().item()
+
+def UniformSample_original(dataset, neg_num = 1):
     dataset : BasicDataset
     allPos = dataset.allPos
     start = time()
     if sample_ext:
         S = sampling.sample_negative(dataset.n_users, dataset.m_items,
-                                     dataset.trainDataSize, allPos, neg_ratio)
+                                     dataset.trainDataSize, allPos, neg_num)
     else:
         S = UniformSample_original_python(dataset)
     return S

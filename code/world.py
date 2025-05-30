@@ -30,7 +30,7 @@ if not os.path.exists(FILE_PATH):
 
 
 config = {}
-all_dataset = ['lastfm', 'gowalla', 'yelp2018', 'amazon-book', 'beauty']
+all_dataset = ['lastfm', 'gowalla', 'yelp2018', 'amazon-book', 'beauty','pruned']
 all_models  = ['mf', 'lgn']
 # config['batch_size'] = 4096
 config['bpr_batch_size'] = args.bpr_batch
@@ -44,8 +44,8 @@ config['multicore'] = args.multicore
 config['lr'] = args.lr
 config['decay'] = args.decay
 config['pretrain'] = args.pretrain
-config['A_split'] = True
-config['bigdata'] = True
+config['A_split'] = False
+config['bigdata'] = False
 
 GPU = torch.cuda.is_available()
 device = torch.device('cuda' if GPU else "cpu")
